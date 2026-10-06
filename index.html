@@ -90,6 +90,7 @@ signInAnonymously(auth).catch(e=>{window.__fbErr=e.code||String(e)})}catch(e){wi
 <h1>Flatland 탐구 코치</h1>
 <p class="lead">답을 대신 써 주지 않아요. 힌트를 한 단계씩 열고, 핵심 용어와 논리 연결을 채우면 보고서 문장이 완성됩니다.</p>
 <div class="sess" id="sess"></div>
+<div class="hint" id="endbox" hidden></div>
 <nav id="nav" aria-label="활동 단계"></nav>
 <main id="main"></main>
 </div>
@@ -201,16 +202,38 @@ function axDraw(){const n=+$("#ar").value;$("#an").textContent=n;const A=[[280,1
 function cone(b){const t=b*Math.PI/180,dx=Math.sin(t)*75,dy=Math.cos(t)*75;return `<g stroke="var(--ink)" stroke-width="2" fill="var(--chip)"><path d="M85 100L15 0H155Z"/><path d="M85 100L15 200H155Z"/></g><line x1="85" y1="0" x2="85" y2="200" stroke="var(--line)" stroke-dasharray="4"/><line x1="${85-dx}" y1="${130+dy}" x2="${85+dx}" y2="${130-dy}" stroke="var(--bad)" stroke-width="3.5"/>`+tx(85,14,"자르는 평면(빨강)","var(--bad)")}
 const fmt=ms=>{const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60);return(h?h+"시간 ":"")+m+"분 "+s%60+"초"};
 const stamp=t=>new Date(t).toLocaleString("ko-KR",{month:"long",day:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit"});
-function stats(){const x=st.sess;if(!x)return null;const away=x.tot+(x.as&&!x.end?Date.now()-x.as:0),total=(x.end||Date.now())-x.t0;return{away,study:Math.max(total-away,0),n:x.n}}
+function stats(){const x=st.sess;if(!x)return null;const away=x.tot+(x.as&&!x.end?Date.now()-x.as:0),total=(x.end||Date.now())-x.t0-(x.gap||0);return{away,study:Math.max(total-away,0),n:x.n}}
 function goAway(){const x=st.sess;if(!x||x.end||x.as)return;x.as=Date.now();x.n++;save()}
 function back(){const x=st.sess;if(!x||!x.as)return;const d=Date.now()-x.as;x.tot+=d;x.log.push([x.as,d]);x.as=0;save()}
 document.addEventListener("visibilitychange",()=>document.hidden?goAway():back());window.addEventListener("blur",goAway);window.addEventListener("focus",back);
 const live=k=>`<span data-k="${k}"></span>`;
+let restoredNote=false,tEnding=false;
+function loadSaves(){try{return JSON.parse(localStorage.getItem("flat-coach-saves")||"{}")||{}}catch(e){return{}}}
+function putSaves(o){try{localStorage.setItem("flat-coach-saves",JSON.stringify(o))}catch(e){}}
+function archiveWork(){if(!st.sid)return;const o=loadSaves();o[st.sid]={name:st.name,a:st.a,topic:st.topic,wz:st.wz,hl:st.hl,step:st.step,sess:st.sess,sub:st.sub||0,saved:Date.now()};putSaves(o)}
+function resetWork(){st.a={};st.wz={};st.hl={};st.topic=0;st.step=0;st.sess=null;st.sub=0;st.sid="";st.name="";st.dw=0;subWarn=false;save()}
+function clearScreen(){archiveWork();resetWork();const b=$("#endbox");if(b)b.hidden=true;renderSess();render();window.scrollTo(0,0)}
+function askEnd(){const b=$("#endbox");b.hidden=false;
+ b.innerHTML="<b>학습을 종료할까요?</b> 종료하면 화면의 내용이 지워져요. 나중에 <b>같은 학번과 이름</b>으로 학습 시작을 누르면 이어서 쓸 수 있어요."+(typeof submit==="function"&&!st.sub?"<br>⚠ 아직 <b>최종 보고서를 제출하지 않았어요.</b>":"")+"<div class=\"row\" style=\"margin:8px 0 0\"><button class=\"btn pri\" id=\"e1\">📄 PDF 받고 종료</button><button class=\"btn\" id=\"e2\">그냥 종료</button><button class=\"btn\" id=\"e3\">취소</button></div><div class=\"msg\" id=\"em\" role=\"status\"></div>";
+ b.scrollIntoView({block:"nearest"})}
+async function endStudy(wp){const x=st.sess;if(!x||tEnding)return;tEnding=true;back();x.end=x.end||Date.now();save();renderSess();
+ if(wp){const em=$("#em"),w=tmp([repHtml()]);if(em)em.textContent="PDF를 만드는 중…";
+  try{await makePdf(w.els,"Flatland_"+(st.sid||"보고서")+"_"+(st.name||"")+".pdf")}catch(e){w.box.remove();tEnding=false;const m2=$("#em");if(m2)m2.textContent="PDF를 만들지 못했어요. 인터넷을 확인하거나 아래 보고서 완성 단계의 ‘인쇄’로 저장한 뒤, ‘그냥 종료’를 눌러 주세요.";return}
+  w.box.remove()}
+ clearScreen();tEnding=false}
 function renderSess(){const x=st.sess,e=$("#sess");
- if(!x){e.innerHTML=`<div><i>학번</i><input id="sid" placeholder="예: 20101" value="${esc(st.sid)}"></div><div><i>이름</i><input id="snm" placeholder="이름" value="${esc(st.name)}"></div><button class="btn pri" id="go">학습 시작</button><span class="msg" id="sm">학번과 이름을 입력하고 학습 시작을 눌러야 활동지를 쓸 수 있어요.</span>`;
-  $("#go").onclick=()=>{const a=$("#sid").value.trim(),b=$("#snm").value.trim();if(!a||!b){$("#sm").textContent="학번과 이름을 모두 입력해 주세요.";return}st.sid=a;st.name=b;st.sess={t0:Date.now(),n:0,tot:0,as:0,log:[],end:0};save();renderSess();render()};return}
- e.innerHTML=`<div><i>학번</i><b>${esc(st.sid)}</b></div><div><i>이름</i><b>${esc(st.name)}</b></div><div><i>학습 시작</i><b>${stamp(x.t0)}</b></div><div><i>학습 시간</i><b>${live("dur")}</b></div><div><i>이탈 횟수</i><b>${live("cnt")}회</b></div><div><i>이탈 시간</i><b>${live("away")}</b></div>${x.end?`<button class="btn" id="rs">새로 시작</button>`:`<button class="btn" id="en">학습 종료</button>`}`;
- if(x.end)$("#rs").onclick=()=>{st.sess=null;save();renderSess();render()};else $("#en").onclick=()=>{back();x.end=Date.now();save();renderSess();render()};tick()}
+ if(!x){e.innerHTML=`<div><i>학번</i><input id="sid" placeholder="예: 20101" value="${esc(st.sid)}"></div><div><i>이름</i><input id="snm" placeholder="이름" value="${esc(st.name)}"></div><button class="btn pri" id="go">학습 시작</button><span class="msg" id="sm">학번과 이름을 입력하고 학습 시작을 눌러야 활동지를 쓸 수 있어요. 이전에 쓴 기록이 있으면 같은 학번·이름으로 불러와요.</span>`;
+  $("#go").onclick=()=>{const a=$("#sid").value.trim(),b=$("#snm").value.trim(),m=$("#sm");if(!a||!b){m.textContent="학번과 이름을 모두 입력해 주세요.";return}
+   const o=loadSaves(),r=o[a];if(r&&r.name!==b){m.textContent="이 학번으로 저장된 기록이 있는데 이름이 달라요. 학번과 이름을 다시 확인해 주세요.";return}
+   st.sid=a;st.name=b;
+   if(r){st.a=r.a||{};st.topic=r.topic||0;st.wz=r.wz||{};st.hl=r.hl||{};st.step=r.step||0;st.sub=r.sub||0;const s=r.sess;
+    if(s){if(s.end){s.gap=(s.gap||0)+(Date.now()-s.end);s.end=0}s.as=0;st.sess=s}else st.sess={t0:Date.now(),n:0,tot:0,as:0,log:[],end:0,gap:0};
+    delete o[a];putSaves(o);restoredNote=true}
+   else{st.a={};st.topic=0;st.wz={};st.hl={};st.step=0;st.sub=0;st.sess={t0:Date.now(),n:0,tot:0,as:0,log:[],end:0,gap:0}}
+   save();renderSess();render()};return}
+ e.innerHTML=`<div><i>학번</i><b>${esc(st.sid)}</b></div><div><i>이름</i><b>${esc(st.name)}</b></div><div><i>학습 시작</i><b>${stamp(x.t0)}</b></div><div><i>학습 시간</i><b>${live("dur")}</b></div><div><i>이탈 횟수</i><b>${live("cnt")}회</b></div><div><i>이탈 시간</i><b>${live("away")}</b></div>${x.end?`<button class="btn" id="rs">화면 지우기</button>`:`<button class="btn" id="en">학습 종료</button>`}${restoredNote?`<span class="msg" role="status">✓ 저장된 기록을 불러왔어요.</span>`:""}`;restoredNote=false;
+ if(x.end)$("#rs").onclick=clearScreen;else $("#en").onclick=askEnd;tick()}
+document.addEventListener("click",e=>{const id=e.target.id;if(id==="e1")endStudy(true);if(id==="e2")endStudy(false);if(id==="e3")$("#endbox").hidden=true});
 function tick(){const s=stats();if(!s)return;document.querySelectorAll("[data-k]").forEach(e=>{const k=e.dataset.k;e.textContent=k=="dur"?fmt(s.study):k=="cnt"?s.n:fmt(s.away)})}
 
 function repHead2(d){const x=d.sess;if(!x)return `<p class="empty">학습 시작 기록 없음</p>`;const L=d.live,lg=(x.log||[]).slice(0,8).map(l=>{l=Array.isArray(l)?l:[l.s,l.d];return stamp(l[0]).replace(/^.*일 /,"")+"("+fmt(l[1])+")"}).join(", ")||"없음";
@@ -224,7 +247,7 @@ function repHtml2(d){const A=d.a||{},P=T[d.topic||0],g=id=>A[id]?`<p>${esc(A[id]
  <h3>3. 공간좌표로 단면 계산하기</h3><p class="qq">${QTXT.q2a}</p>${g("q2a")}<p class="qq">${QTXT.q2b}</p>${g("q2b")}
  <h3>4. 토론 및 확장: ${P.t}</h3><p class="qq">${P.q}</p>${g("q3")}</div>`}
 function repHtml(){return repHtml2({a:st.a,topic:st.topic,sid:st.sid,name:st.name,sess:st.sess,live:true})}
-function subMsg(){return st.sub?"✓ "+stamp(st.sub)+"에 제출했어요. 고친 뒤 다시 제출하면 최신 내용으로 바뀌어요.":"다 정리했다면 ‘최종 보고서 제출’을 눌러 선생님께 보내세요. 제출하면 학습 시간이 종료돼요."}
+function subMsg(){return st.sub?"✓ "+stamp(st.sub)+"에 제출했어요. 고친 뒤 다시 제출하면 최신 내용으로 바뀌어요. 다 마쳤다면 맨 위 ‘화면 지우기’를 눌러 주세요.":"다 정리했다면 ‘최종 보고서 제출’을 눌러 선생님께 보내세요. 제출하면 학습 시간이 종료돼요. 다 마쳤다면 맨 위 ‘화면 지우기’를 눌러 다음 학생이 쓸 수 있게 해 주세요."}
 let subWarn=false,subs=[];
 function tmp(h){const b=document.createElement("div");b.style.cssText="position:absolute;left:-9999px;top:0;width:760px";b.innerHTML=h.join("");document.body.appendChild(b);tick();return{box:b,els:[...b.children]}}
 async function rptPages(el){if(!window.jspdf||!window.html2canvas)throw 0;const c=await html2canvas(el,{scale:2,backgroundColor:"#ffffff"}),W=190,H=277,ph=H*c.width/W,out=[];
