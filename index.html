@@ -78,9 +78,9 @@ window.TEACHER_EMAIL="teacher@flatland-lab.com"; /* 교사 계정 이메일(비�
 <script type="module" onerror="window.__fbErr='firebase-not-loaded'">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {getAuth,signInAnonymously,signInWithEmailAndPassword,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {getFirestore,doc,setDoc,collection,getDocs} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getFirestore,doc,setDoc,deleteDoc,collection,getDocs} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 try{const app=initializeApp(window.FIREBASE_CONFIG),auth=getAuth(app),db=getFirestore(app);
-window.__fb={auth,db,doc,setDoc,collection,getDocs,signInAnonymously,signInWithEmailAndPassword,signOut};
+window.__fb={auth,db,doc,setDoc,deleteDoc,collection,getDocs,signInAnonymously,signInWithEmailAndPassword,signOut};
 signInAnonymously(auth).catch(e=>{window.__fbErr=e.code||String(e)})}catch(e){window.__fbErr=e.code||String(e)}
 </script>
 </head>
@@ -235,7 +235,7 @@ async function saveBlob(blob,name){const u=URL.createObjectURL(blob),a=document.
 async function makePdf(els,name){const pages=[];for(const el of els)pages.push(...await rptPages(el));await saveBlob(pagesToPdf(pages),name)}
 let tbusy=false;
 const ymd=()=>new Date().toLocaleDateString("sv-SE").replace(/-/g,"");
-function ckCount(){const n=document.querySelectorAll(".ck:checked").length,e=$("#sc"),a=$("#tall"),all=document.querySelectorAll(".ck");if(e)e.textContent=n;if(a)a.checked=all.length>0&&n===all.length}
+function ckCount(){const n=document.querySelectorAll(".ck:checked").length,sdd=$("#sd"),e=$("#sc"),a=$("#tall"),all=document.querySelectorAll(".ck");if(sdd)sdd.textContent=n;if(e)e.textContent=n;if(a)a.checked=all.length>0&&n===all.length}
 async function mergeSubs(ids){if(tbusy)return;const m=$("#tm");let L=subs.filter(x=>ids.includes(x.id));
  if($("#tdd")&&$("#tdd").checked){const best={};L.forEach(x=>{const k=String(x.sid).trim();if(!best[k]||x.at>best[k].at)best[k]=x});L=L.filter(x=>best[String(x.sid).trim()]===x)}
  if(!L.length){m.textContent="합칠 보고서가 없어요.";return}
@@ -251,6 +251,15 @@ async function mergeSubs(ids){if(tbusy)return;const m=$("#tm");let L=subs.filter
   m.textContent="✓ "+L.length+"명, 총 "+all.length+"쪽짜리 PDF 한 개를 저장했어요."}
  catch(e){m.textContent=e&&e.code==="declined"?"저장이 취소됐어요.":"PDF를 만들지 못했어요. 인터넷(PDF 도구 불러오기)을 확인하고 다시 눌러 주세요. 학생 수가 많으면 선택해서 나눠 받아 보세요."}
  w.box.remove();tw.forEach(x=>x.box.remove());tbusy=false}
+let pendDel=null;
+async function delOne(id){const f=await fbw();await f.deleteDoc(f.doc(f.db,"submissions",id))}
+function askDel(ids,msg,typed){pendDel={ids,typed};const b=$("#tcf");b.hidden=false;
+ b.innerHTML="<b>"+esc(msg)+"</b> 되돌릴 수 없어요. 먼저 PDF로 받아 두는 걸 권해요."+(typed?"<br>확인을 위해 <b>삭제</b>라고 입력하세요: <input id=\"tin\" autocomplete=\"off\" style=\"width:90px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink);font:inherit\">":"")+"<div class=\"row\" style=\"margin:8px 0 0\"><button class=\"btn\" id=\"tok\" style=\"background:var(--bad);color:#fff;border-color:var(--bad)\">삭제하기</button><button class=\"btn\" id=\"tcn\">취소</button></div>";
+ b.scrollIntoView({block:"center"});if(typed)$("#tin").focus()}
+async function delSubs(ids){if(tbusy)return;tbusy=true;const m=$("#tm");let ok=0,fail=0,last=null;
+ for(let i=0;i<ids.length;i++){m.textContent="삭제하는 중… "+(i+1)+"/"+ids.length;try{await delOne(ids[i]);ok++}catch(e){fail++;last=e}}
+ tbusy=false;await loadSubs();
+ m.textContent=(ok?"✓ "+ok+"건을 삭제했어요. ":"")+(fail?fail+"건은 삭제하지 못했어요."+(typeof errTxt==="function"?errTxt(last):""):"")}
 async function stuPdf(){const m=$("#sst"),w=tmp([repHtml()]);m.textContent="PDF를 만드는 중…";try{await makePdf(w.els,`Flatland_${st.sid||"보고서"}_${st.name||""}.pdf`);m.textContent="PDF 저장을 요청했어요. "+subMsg()}catch(e){m.textContent="이 환경에서는 PDF 저장이 막혔어요. ‘인쇄’ 버튼에서 PDF로 저장해 주세요."}w.box.remove()}
 async function submit(){const m=$("#sst"),miss=STEPS.slice(0,4).filter(x=>!isDone(x));
  if(miss.length&&!subWarn){subWarn=true;m.textContent="보완하면 좋은 단계: "+miss.map(x=>x.t).join(", ")+". 그대로 제출하려면 한 번 더 누르세요.";return}
@@ -264,10 +273,10 @@ const EH={"auth/operation-not-allowed":"Firebase > Authentication > 로그인 �
 function errTxt(e){const c=(e&&e.code)||window.__fbErr||"";return c?" [오류: "+c+"] "+(EH[c]||""):""}
 async function fbw(){for(let i=0;i<60&&window.__fbErr!=="firebase-not-loaded"&&!(window.__fb&&window.__fb.auth.currentUser);i++)await new Promise(r=>setTimeout(r,250));const f=window.__fb;if(!f||!f.auth.currentUser)throw {code:window.__fbErr||"firebase-not-loaded"};return f}
 function showTeacher(){$("#nav").style.display="none";$("#sess").style.display="none";$("#tp").innerHTML="";const m=$("#main");m.classList.remove("locked");
- m.innerHTML=`<div class="tip"><b>교사 모드</b> · 제출 <b id="tc">0</b>건 <button class="btn" id="tr">새로고침</button> <button class="btn" id="tx">나가기</button></div><div class="tip"><b>PDF 한 개로 합쳐 받기</b> <span class="msg">(학번 순 · 학생마다 새 쪽에서 시작)</span><div class="row"><button class="btn pri" id="tm1">📑 전체 합쳐 받기</button><button class="btn" id="tm2">✔ 선택한 학생 합쳐 받기 (<span id="sc">0</span>명)</button></div><label><input type="checkbox" id="tcov" checked> 맨 앞에 학생 목록(쪽 번호) 표지 넣기</label><br><label><input type="checkbox" id="tdd" checked> 학번이 같은 제출은 가장 최근 것만 넣기</label><div class="msg" id="tm" role="status"></div></div><div id="tl"></div><div id="tv"></div>`;loadSubs()}
+ m.innerHTML=`<div class="tip"><b>교사 모드</b> · 제출 <b id="tc">0</b>건 <button class="btn" id="tr">새로고침</button> <button class="btn" id="tx">나가기</button></div><div class="tip"><b>PDF 한 개로 합쳐 받기</b> <span class="msg">(학번 순 · 학생마다 새 쪽에서 시작)</span><div class="row"><button class="btn pri" id="tm1">📑 전체 합쳐 받기</button><button class="btn" id="tm2">✔ 선택한 학생 합쳐 받기 (<span id="sc">0</span>명)</button></div><label><input type="checkbox" id="tcov" checked> 맨 앞에 학생 목록(쪽 번호) 표지 넣기</label><br><label><input type="checkbox" id="tdd" checked> 학번이 같은 제출은 가장 최근 것만 넣기</label><div class="msg" id="tm" role="status"></div></div><div class="tip"><b>제출 삭제</b> <span class="msg">(삭제하면 되돌릴 수 없어요. 먼저 PDF로 받아 두세요)</span><div class="row"><button class="btn" id="td1" style="color:var(--bad)">🗑 선택한 학생 삭제 (<span id="sd">0</span>명)</button><button class="btn" id="td2" style="color:var(--bad)">🗑 전체 삭제</button></div><div class="hint" id="tcf" hidden></div></div><div id="tl"></div><div id="tv"></div>`;loadSubs()}
 async function loadSubs(){const l=$("#tl");l.textContent="불러오는 중…";
  try{const f=await fbw();const q=await f.getDocs(f.collection(f.db,"submissions"));subs=q.docs.map(d=>Object.assign({id:d.id},d.data())).sort((a,b)=>String(a.sid).localeCompare(String(b.sid),"ko",{numeric:true}));$("#tc").textContent=subs.length;
-  l.innerHTML=subs.length?`<table class="r"><tr><th><input type="checkbox" id="tall" aria-label="전체 선택"></th><th>학번</th><th>이름</th><th>제출</th><th>학습시간</th><th>이탈</th><th></th></tr>`+subs.map(x=>`<tr><td><input type="checkbox" class="ck" value="${x.id}" aria-label="선택"></td><td>${esc(x.sid)}</td><td>${esc(x.name)}</td><td>${stamp(x.at)}</td><td>${fmt(x.sess.study)}</td><td>${x.sess.n}회 · ${fmt(x.sess.away)}</td><td><button class="btn" data-pv="${x.id}">보기</button> <button class="btn" data-pf="${x.id}">PDF</button></td></tr>`).join("")+`</table>`:"아직 제출된 보고서가 없어요.";ckCount()}
+  l.innerHTML=subs.length?`<table class="r"><tr><th><input type="checkbox" id="tall" aria-label="전체 선택"></th><th>학번</th><th>이름</th><th>제출</th><th>학습시간</th><th>이탈</th><th></th></tr>`+subs.map(x=>`<tr><td><input type="checkbox" class="ck" value="${x.id}" aria-label="선택"></td><td>${esc(x.sid)}</td><td>${esc(x.name)}</td><td>${stamp(x.at)}</td><td>${fmt(x.sess.study)}</td><td>${x.sess.n}회 · ${fmt(x.sess.away)}</td><td><button class="btn" data-pv="${x.id}">보기</button> <button class="btn" data-pf="${x.id}">PDF</button> <button class="btn" data-pd="${x.id}" style="color:var(--bad)">삭제</button></td></tr>`).join("")+`</table>`:"아직 제출된 보고서가 없어요.";ckCount()}
  catch(e){l.textContent="불러오지 못했어요. 교사 계정으로 로그인됐는지, Firebase 설정과 보안 규칙을 확인해 주세요."+errTxt(e)}}
 async function tPdf(ids,name){const L=subs.filter(x=>!ids.length||ids.includes(x.id));if(!L.length)return;const m=$("#tm");m.textContent="PDF를 만드는 중… ("+L.length+"명)";
  const w=tmp(L.map(x=>repHtml2({a:x.a,topic:x.topic,sid:x.sid,name:x.name,sess:x.sess})));
@@ -279,6 +288,11 @@ document.addEventListener("click",async e=>{const t=e.target,d=t.dataset||{};
  if(t.id==="tm1")mergeSubs(subs.map(x=>x.id));
  if(t.id==="tm2"){const ids=[...document.querySelectorAll(".ck:checked")].map(c=>c.value);if(!ids.length){$("#tm").textContent="체크한 학생이 없어요. 표 왼쪽 칸에서 학생을 고르세요.";return}mergeSubs(ids)}
  if(t.id==="tall"){document.querySelectorAll(".ck").forEach(c=>c.checked=t.checked);ckCount()}
+ if(d.pd){const x=subs.find(y=>y.id===d.pd);if(x)askDel([x.id],"‘"+x.sid+" "+x.name+"’ 학생의 제출 1건을 삭제할까요?",false)}
+ if(t.id==="td1"){const ids=[...document.querySelectorAll(".ck:checked")].map(c=>c.value);if(!ids.length){$("#tm").textContent="체크한 학생이 없어요. 표 왼쪽 칸에서 학생을 고르세요.";return}askDel(ids,"선택한 "+ids.length+"건의 제출을 삭제할까요?",false)}
+ if(t.id==="td2"){if(!subs.length){$("#tm").textContent="삭제할 제출이 없어요.";return}askDel(subs.map(x=>x.id),"제출 전체 "+subs.length+"건을 삭제할까요?",true)}
+ if(t.id==="tcn"){$("#tcf").hidden=true;pendDel=null}
+ if(t.id==="tok"&&pendDel){if(pendDel.typed&&($("#tin").value||"").trim()!=="삭제"){$("#tm").textContent="‘삭제’라고 정확히 입력해야 전체 삭제가 돼요.";return}const ids=pendDel.ids;pendDel=null;$("#tcf").hidden=true;await delSubs(ids)}
  if(t.id==="tx"){try{const f=window.__fb;await f.signOut(f.auth);await f.signInAnonymously(f.auth)}catch(x){}$("#nav").style.display="";$("#sess").style.display="";render()}
  if(d.pv){const x=subs.find(y=>y.id===d.pv);$("#tv").innerHTML=repHtml2({a:x.a,topic:x.topic,sid:x.sid,name:x.name,sess:x.sess});$("#tv").scrollIntoView({behavior:"smooth"})}
  if(d.pf){const x=subs.find(y=>y.id===d.pf);tPdf([x.id],`Flatland_${x.sid}_${x.name}.pdf`)}});
